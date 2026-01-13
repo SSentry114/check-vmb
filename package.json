@@ -7,12 +7,17 @@
     "start": "node bot.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["telegram", "flight", "bot"],
+  "keywords": [
+    "telegram",
+    "flight",
+    "bot"
+  ],
   "author": "Sentry",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
     "axios": "^1.13.2",
+    "dotenv": "^17.2.3",
     "node-telegram-bot-api": "^0.67.0"
   }
 }
