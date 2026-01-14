@@ -2,6 +2,11 @@ const TelegramBot = require('node-telegram-bot-api');
 const { searchFlights } = require('./searchFlights');
 require('dotenv').config();
 const { startTracking, addApp } = require('./appStoreTracker');
+const { Pool } = require('pg');
+
+const pool = new Pool({
+  connectionString: 'postgresql://postgres:nWCtPjsjbVwhnfqPFmNfqNpYMVprYoaU@interchange.proxy.rlwy.net:32107/railway'
+});
 const bot = new TelegramBot("8270159218:AAEYyi8uGis2NfRiE9_2hwZAyVqHhYZCzy0", { polling: true });
 startTracking(bot);
 console.log('🤖 Bot is running...');
@@ -61,16 +66,28 @@ bot.onText(/\/check_vmb (.+)/, async (msg, match) => {
 
 bot.onText(/\/checking_app (.+)/, async (msg, match) => {
   const chatId = msg.chat.id;
-  const bundleId = match[1].trim();
+  const rawInput = match[1].trim();
 
-  if (!bundleId.includes('.')) {
-    return bot.sendMessage(chatId, '❌ BundleId không hợp lệ');
+  // Tách bundleId bằng dấu phẩy, loại bỏ khoảng trắng
+  const bundleIds = rawInput.split(',').map(b => b.trim()).filter(b => b.length > 0);
+
+  if (bundleIds.length === 0) {
+    return bot.sendMessage(chatId, '❌ Bạn chưa nhập bundleId nào.');
   }
 
-  addApp(bundleId, chatId);
+  // Kiểm tra từng bundleId hợp lệ
+  const invalids = bundleIds.filter(b => !b.includes('.'));
+  if (invalids.length > 0) {
+    return bot.sendMessage(chatId, `❌ BundleId không hợp lệ: ${invalids.join(', ')}`);
+  }
+
+  // Thêm từng bundleId vào DB
+  for (const bundleId of bundleIds) {
+    await addApp(bundleId, chatId);
+  }
 
   bot.sendMessage(
     chatId,
-    `📡 Đã thêm app vào hệ thống theo dõi vĩnh viễn:\n\n🔹 ${bundleId}\n⏱ Check mỗi 5 phút`
+    `📡 Đã thêm các app vào hệ thống theo dõi vĩnh viễn:\n🔹 ${bundleIds.join('\n🔹 ')}\n⏱ Kiểm tra mỗi 5 phút`
   );
 });

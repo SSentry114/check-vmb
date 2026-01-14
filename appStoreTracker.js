@@ -1,18 +1,17 @@
 const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
+const { Pool } = require('pg');
 
-const DATA_FILE = path.join(__dirname, 'appstore_data.json');
+const pool = new Pool({
+  connectionString: "postgresql://postgres:nWCtPjsjbVwhnfqPFmNfqNpYMVprYoaU@interchange.proxy.rlwy.net:32107/railway",
+});
 
-let apps = {};
-
-// Load data khi start
-if (fs.existsSync(DATA_FILE)) {
-  apps = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
-}
-
-function saveData() {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(apps, null, 2));
+async function addApp(bundleId, chatId) {
+  await pool.query(
+    `INSERT INTO app_store_apps(bundle_id, chat_id)
+     VALUES($1, $2)
+     ON CONFLICT (bundle_id) DO NOTHING`,
+    [bundleId, chatId]
+  );
 }
 
 async function fetchApp(bundleId) {
@@ -21,29 +20,28 @@ async function fetchApp(bundleId) {
   return res.data;
 }
 
-function addApp(bundleId, chatId) {
-  if (!apps[bundleId]) {
-    apps[bundleId] = {
-      bundleId,
-      chatId,
-      exists: false,
-      version: null,
-      trackName: null,
-      sellerName: null
-    };
-    saveData();
-  }
+async function getTrackedApps() {
+  const res = await pool.query(`SELECT * FROM app_store_apps`);
+  return res.rows;
+}
+
+async function updateApp(app) {
+  await pool.query(
+    `UPDATE app_store_apps
+     SET exists=$1, version=$2, track_name=$3, seller_name=$4, last_checked=NOW()
+     WHERE bundle_id=$5`,
+    [app.exists, app.version, app.track_name, app.seller_name, app.bundle_id]
+  );
 }
 
 function startTracking(bot) {
   setInterval(async () => {
-    for (const bundleId of Object.keys(apps)) {
-      const app = apps[bundleId];
+    const apps = await getTrackedApps();
 
+    for (const app of apps) {
       try {
-        const data = await fetchApp(bundleId);
+        const data = await fetchApp(app.bundle_id);
 
-        // ===== APP EXISTS =====
         if (data.resultCount > 0) {
           const info = data.results[0];
           const currentVersion = info.version;
@@ -51,7 +49,7 @@ function startTracking(bot) {
           // App lên lần đầu
           if (!app.exists) {
             await bot.sendMessage(
-              app.chatId,
+              app.chat_id,
               `🎉 *App đã lên App Store!*\n\n📱 ${info.trackName}\n🆕 Version: ${currentVersion}\n🌍 ${info.trackViewUrl}`,
               { parse_mode: 'Markdown' }
             );
@@ -60,43 +58,40 @@ function startTracking(bot) {
           // Version mới
           if (app.version && app.version !== currentVersion) {
             await bot.sendMessage(
-              app.chatId,
-              `🚀 *App có version mới!*\n\n📱 ${info.trackName}\n🔁 ${app.version} → ${currentVersion}`,
+              app.chat_id,
+              `🚀 *App có version mới!*\n📱 ${info.trackName}\n🔁 ${app.version} → ${currentVersion}`,
               { parse_mode: 'Markdown' }
             );
           }
 
-          // Update snapshot
-          app.exists = true;
-          app.version = currentVersion;
-          app.trackName = info.trackName;
-          app.sellerName = info.sellerName;
+          // Update DB
+          await updateApp({
+            ...app,
+            exists: true,
+            version: currentVersion,
+            track_name: info.trackName,
+            seller_name: info.sellerName
+          });
 
-        } 
-        // ===== APP DIE / REMOVED =====
-        else {
+        } else {
+          // App bị gỡ
           if (app.exists) {
             await bot.sendMessage(
-              app.chatId,
-              `⚠️ *App đã bị gỡ khỏi App Store!*\n\n📱 ${app.trackName}\n🔗 ${bundleId}`,
+              app.chat_id,
+              `⚠️ *App đã bị gỡ khỏi App Store!*\n📱 ${app.track_name}\n🔗 ${app.bundle_id}`,
               { parse_mode: 'Markdown' }
             );
           }
 
-          app.exists = false;
-          app.version = null;
+          await updateApp({ ...app, exists: false, version: null });
         }
-
-        saveData();
 
       } catch (err) {
         console.error('❌ AppStore check error:', err.message);
       }
     }
-  }, 5 * 60 * 1000);
+
+  }, 5 * 60 * 1000); // 5 phút
 }
 
-module.exports = {
-  startTracking,
-  addApp
-};
+module.exports = { addApp, startTracking };
