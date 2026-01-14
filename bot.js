@@ -1,9 +1,9 @@
 const TelegramBot = require('node-telegram-bot-api');
 const { searchFlights } = require('./searchFlights');
 require('dotenv').config();
-
+const { startTracking, addApp } = require('./appStoreTracker');
 const bot = new TelegramBot("8270159218:AAEYyi8uGis2NfRiE9_2hwZAyVqHhYZCzy0", { polling: true });
-
+startTracking(bot);
 console.log('🤖 Bot is running...');
 
 bot.onText(/\/check_vmb (.+)/, async (msg, match) => {
@@ -57,4 +57,20 @@ bot.onText(/\/check_vmb (.+)/, async (msg, match) => {
     console.error("💥 Lỗi searchFlights:", err.response?.data || err.message || err);
     bot.sendMessage(chatId, '⚠️ Lỗi khi tra cứu vé máy bay');
   }
+});
+
+bot.onText(/\/checking_app (.+)/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const bundleId = match[1].trim();
+
+  if (!bundleId.includes('.')) {
+    return bot.sendMessage(chatId, '❌ BundleId không hợp lệ');
+  }
+
+  addApp(bundleId, chatId);
+
+  bot.sendMessage(
+    chatId,
+    `📡 Đã thêm app vào hệ thống theo dõi vĩnh viễn:\n\n🔹 ${bundleId}\n⏱ Check mỗi 5 phút`
+  );
 });
